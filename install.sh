@@ -1659,10 +1659,42 @@ if [[ -d "$HERE/ipu7-hardware-isp" ]]; then
     run cp -P "$HERE/ipu7-hardware-isp/lib/"* /usr/lib/ 2>/dev/null || true
     run mkdir -p /usr/lib/libcamhal/plugins
     run cp -P "$HERE/ipu7-hardware-isp/plugins/"* /usr/lib/libcamhal/plugins/ 2>/dev/null || true
-    run mkdir -p /usr/lib/gstreamer-1.0
-    run cp -P "$HERE/ipu7-hardware-isp/gstreamer/"* /usr/lib/gstreamer-1.0/ 2>/dev/null || true
+    # The plugin must land in the directory the 64-bit GStreamer actually scans.
+    # On Fedora/openSUSE /usr/lib/gstreamer-1.0 is the 32-bit (i686) tree, so
+    # icamerasrc copied there is never found and v4l2-relayd feeds nothing.
+    GST_DIR=""
+    for d in /usr/lib64/gstreamer-1.0 /usr/lib/x86_64-linux-gnu/gstreamer-1.0 /usr/lib/gstreamer-1.0; do
+      # ELF header byte 4 (EI_CLASS): 02 = 64-bit
+      if [[ -f $d/libgstcoreelements.so && $(od -An -tx1 -j4 -N1 "$d/libgstcoreelements.so" 2>/dev/null | tr -d ' ') == 02 ]]; then
+        GST_DIR=$d; break
+      fi
+    done
+    if [[ -z $GST_DIR ]] && command -v pkg-config >/dev/null 2>&1; then
+      GST_DIR=$(pkg-config --variable=pluginsdir gstreamer-1.0 2>/dev/null || true)
+    fi
+    [[ -n $GST_DIR ]] || GST_DIR=/usr/lib/gstreamer-1.0
+    run mkdir -p "$GST_DIR"
+    run cp -P "$HERE/ipu7-hardware-isp/gstreamer/"* "$GST_DIR/" 2>/dev/null || true
+    # Remove a stale copy left in the 32-bit tree by older installs.
+    if [[ $GST_DIR != /usr/lib/gstreamer-1.0 && -f /usr/lib/gstreamer-1.0/libgsticamerasrc.so ]]; then
+      run rm -f /usr/lib/gstreamer-1.0/libgsticamerasrc.so
+    fi
+    # The HAL backend (ipu7x.so) is linked against libjsoncpp.so.25. Distros
+    # with jsoncpp >= 1.9.6 only ship .so.26, which exports every symbol it
+    # uses. Provide a private compat link (read via LD_LIBRARY_PATH in
+    # v4l2-relayd.service) rather than touching the system library dirs.
+    run mkdir -p /usr/lib/libcamhal/compat
+    if ! ldconfig -p 2>/dev/null | grep -q 'libjsoncpp\.so\.25 .*x86-64'; then
+      JSONCPP=$(ldconfig -p 2>/dev/null | awk '/libjsoncpp\.so\.[0-9]+ .*x86-64/ { print $NF; exit }')
+      if [[ -n $JSONCPP ]]; then
+        run ln -sfn "$JSONCPP" /usr/lib/libcamhal/compat/libjsoncpp.so.25
+        ok "linked libjsoncpp.so.25 -> $JSONCPP for the Intel Camera HAL"
+      else
+        bad "libjsoncpp is not installed — the Intel Camera HAL cannot load (install jsoncpp)"
+      fi
+    fi
     run ldconfig 2>/dev/null || true
-    ok "installed Intel Camera HAL, IA libraries, and GStreamer plugin"
+    ok "installed Intel Camera HAL, IA libraries, and GStreamer plugin ($GST_DIR)"
   fi
 
   # 3. v4l2-relayd binary and systemd service

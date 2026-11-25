@@ -86,7 +86,10 @@ for f in /etc/udev/rules.d/99-hm1092-ir-led.rules /etc/udev/rules.d/99-svp7500-n
 done
 
 step "v4l2-relayd service, binaries, and camera tuning"
-for f in /etc/systemd/system/v4l2-relayd.service /usr/bin/v4l2-relayd; do
+for f in /etc/systemd/system/v4l2-relayd.service /usr/bin/v4l2-relayd \
+         /usr/lib64/gstreamer-1.0/libgsticamerasrc.so \
+         /usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgsticamerasrc.so \
+         /usr/lib/gstreamer-1.0/libgsticamerasrc.so; do
   if [[ -f $f ]]; then
     if [[ $GO -eq 1 ]]; then
       if [[ $f == *.service ]]; then systemctl disable --now "$(basename "$f")" 2>/dev/null || true; fi
@@ -99,6 +102,9 @@ for f in /etc/systemd/system/v4l2-relayd.service /usr/bin/v4l2-relayd; do
 done
 if [[ -d /etc/camera/ipu7x ]]; then
   if [[ $GO -eq 1 ]]; then rm -rf /etc/camera/ipu7x; did "/etc/camera/ipu7x"; else plan "/etc/camera/ipu7x"; fi
+fi
+if [[ -d /usr/lib/libcamhal/compat ]]; then
+  if [[ $GO -eq 1 ]]; then rm -rf /usr/lib/libcamhal/compat; did "/usr/lib/libcamhal/compat"; else plan "/usr/lib/libcamhal/compat"; fi
 fi
 
 step "desktop integration and on-demand wrappers"

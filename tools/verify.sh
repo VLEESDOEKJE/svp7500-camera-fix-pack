@@ -591,10 +591,39 @@ if [ -n "$_SPA" ] && have wpctl; then
   WPCAMS=$(wpctl_status | sed -n '/Video/,/Sinks/p' | grep -cE '\[libcamera\]' || true)
   if [ "${WPCAMS:-0}" -gt 0 ]; then
     p "PipeWire video devices" "$WPCAMS"
+  elif [ "${CAMS:-0}" -gt 0 ] && [ -f /etc/udev/rules.d/99-intel-ipu7-hide-raw.rules ]; then
+    # By design: raw IPU7 nodes are root-only, so a user session's libcamera
+    # (and PipeWire's) sees nothing. Apps use /dev/video50 instead.
+    p "PipeWire libcamera devices" "0 — expected (raw IPU7 nodes are root-only; apps use /dev/video50)"
   elif [ "${CAMS:-0}" -gt 0 ]; then
     p "PipeWire video devices" "0 — libcamera sees $CAMS, PipeWire exposes none"
     broke "PipeWire exposes no camera although libcamera enumerates $CAMS — applications will find nothing"
     next "restart the stack: 'systemctl --user restart pipewire wireplumber', then re-run this script"
+  fi
+fi
+
+# Hardware ISP relay: icamerasrc -> v4l2-relayd -> /dev/video50 (v4l2loopback).
+if [ -f /etc/systemd/system/v4l2-relayd.service ]; then
+  if have gst-inspect-1.0; then
+    if env LD_LIBRARY_PATH=/usr/lib/libcamhal/compat gst-inspect-1.0 icamerasrc >/dev/null 2>&1; then
+      p "GStreamer icamerasrc" "present"
+    else
+      p "GStreamer icamerasrc" "MISSING — v4l2-relayd cannot feed /dev/video50"
+      broke "GStreamer cannot find icamerasrc (plugin installed outside the 64-bit plugin dir?)"
+      next "re-run 'sudo ./install.sh' to install libgsticamerasrc.so into the correct GStreamer plugin dir"
+    fi
+  fi
+  if [ ! -e /usr/lib/libcamhal/compat/libjsoncpp.so.25 ] && ! ldconfig -p 2>/dev/null | grep -q 'libjsoncpp\.so\.25 '; then
+    p "libjsoncpp.so.25 (Camera HAL)" "MISSING — the ipu7x HAL plugin cannot load"
+    broke "libjsoncpp.so.25 is not resolvable — the Intel Camera HAL cannot load"
+    next "re-run 'sudo ./install.sh' to create the jsoncpp compat link"
+  fi
+  if systemctl is-active --quiet v4l2-relayd.service; then
+    p "v4l2-relayd.service" "active"
+  else
+    p "v4l2-relayd.service" "NOT running"
+    broke "v4l2-relayd.service is not running — /dev/video50 has no source"
+    next "check 'journalctl -u v4l2-relayd -b'"
   fi
 fi
 
