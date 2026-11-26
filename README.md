@@ -2,7 +2,15 @@
 
 ## Changelog
 
-### 2026-11-20 — Linux 7.3+ Kernel Compatibility & Hardware ISP Stabilization (Current `master`)
+### 2026-11-26 — Fedora 45 Compatibility & Hardware ISP Diagnostics (Current `master`)
+* **Fixed Hardware ISP installation across distributions**:
+  * Detect the active 64-bit GStreamer plugin directory instead of assuming `/usr/lib/gstreamer-1.0`, which may be the 32-bit directory on Fedora and openSUSE.
+  * Provide a private `libjsoncpp.so.25` compatibility link for the Intel Camera HAL when only a newer jsoncpp library is installed; `v4l2-relayd` loads it through `LD_LIBRARY_PATH` without changing system libraries.
+* **Improved verification and cleanup**:
+  * `tools/verify.sh` checks that `icamerasrc`, the jsoncpp compatibility library, and `v4l2-relayd.service` are available, and clarifies when PipeWire intentionally exposes no raw libcamera devices because applications use `/dev/video50`.
+  * The uninstaller removes the GStreamer plugin from supported 64-bit plugin paths and cleans up the private compatibility directory.
+
+### 2026-11-20 — Linux 7.3+ Kernel Compatibility & Hardware ISP Stabilization
 * **Eliminated Kernel Panic on Linux >= 7.3 (`struct ipu7_bus_device` ABI Alignment)**:
   * In Linux 7.3+ (verified on `7.3.4-1-cachyos`), the in-tree `intel-ipu7` staging bus driver defines `struct ipu7_bus_device` at strictly 1024 bytes. The vendor DKMS module previously appended 40 bytes to this structure (`acquire_fw_task_buffer_lock` mutex and `get_running_fw_task_count` callback), causing an out-of-bounds memory corruption and page fault in `native_queued_spin_lock_slowpath` (`BUG: unable to handle page fault` in `ipu_psys_task_request`).
   * Restored `struct ipu7_bus_device` in `ipu7-bus.h` to match the kernel ABI exactly (1024 bytes).
